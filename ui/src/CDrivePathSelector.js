@@ -115,7 +115,7 @@ class CDrivePathSelector extends React.Component {
       });
     }
     return(
-      <Modal show={this.props.show} onHide={this.props.toggle} dialogClassName="modal-cdrive-selector">
+      <Modal show={this.props.show} onHide={this.props.toggle} size="xl">
         <Modal.Header closeButton>
           <Modal.Title>{this.props.title}</Modal.Title>
         </Modal.Header>

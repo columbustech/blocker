@@ -1,5 +1,5 @@
 .cdrive-path-selector {
-  height: 100%;
+  height: 400px;
   width: 100%;
 }
 .folder-list {
@@ -27,9 +27,4 @@
 }
 .drive-item-name {
   text-align: center;
-}
-.modal-cdrive-selector {
-  width: 60%;
-  min-width: 200px;
-  height: 80%;
 }

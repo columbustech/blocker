@@ -48,7 +48,8 @@ class App extends React.Component {
     const cookies = new Cookies();
     var accessToken = cookies.get('blocker_token');
     if (accessToken !== undefined) {
-      this.getDriveObjects().then(driveObjects => this.setState({driveObjects: driveObjects, isLoggedIn: true}));
+      this.getDriveObjects().then(driveObjects => this.setState({driveObjects: driveObjects}));
+      this.setState({isLoggedIn: true});
       return;
     }
     var url = new URL(window.location.href);

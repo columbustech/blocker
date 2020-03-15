@@ -8,7 +8,6 @@ class CDrivePathSelector extends React.Component {
     super(props);
     this.state = {
       path: "users",
-      listObjects: [],
       selectedPath: "",
     };
     this.getListObjects = this.getListObjects.bind(this);
@@ -16,28 +15,25 @@ class CDrivePathSelector extends React.Component {
     this.listItemClick = this.listItemClick.bind(this);
     this.selectAction = this.selectAction.bind(this);
   }
-  componentDidMount() {
-    this.getListObjects(this.state.path);
-  }
-  getListObjects(path) {
-   var tokens = path.split("/");
+  getListObjects() {
+   var tokens = this.state.path.split("/");
    var listObjects = this.props.driveObjects;
    for (var i=1; i<tokens.length; i++) {
     const token = tokens[i];
     listObjects = listObjects.find(element => (element.name === token)).children;
    }
-   this.setState({listObjects: listObjects, path: path});
+   return listObjects;
   }
   breadcrumbClick(index) {
     var tokens = this.state.path.split("/");
     var newPath = tokens.slice(0,index+1).join("/");
-    this.getListObjects(newPath);
+    this.setState({path: newPath});
   }
-  listItemClick(index) {
-    var newPath = this.state.path + "/" + this.state.listObjects[index].name;
-    if (this.state.listObjects[index].type === "Folder") {
-      this.getListObjects(newPath);
-    } else if(this.state.listObjects[index].type === "File" && this.props.type === "file") {
+  listItemClick(name, type) {
+    var newPath = this.state.path + "/" + name;
+    if (type === "Folder") {
+      this.setState({path: newPath});
+    } else if(type === "File" && this.props.type === "file") {
       this.setState({selectedPath:newPath});
     }
   }
@@ -70,15 +66,16 @@ class CDrivePathSelector extends React.Component {
       }
     });
     let rows;
-    if(this.state.listObjects.length !== 0) {
-      rows = this.state.listObjects.map((dobj, i) => {
+    var listObjects = this.getListObjects();
+    if(listObjects.length !== 0) {
+      rows = listObjects.map((dobj, i) => {
         var name = dobj.name;
         if (name.length > 10) {
           name = name.substring(0,7) + "...";
         }
         if (dobj.type === "Folder") {
           return (
-            <div className="folder-item drive-item" onClick={() => this.listItemClick(i)}>
+            <div className="folder-item drive-item" onClick={() => this.listItemClick(dobj.name, dobj.type)}>
               <div>
                 <FaFolder size={60} color="#92cefe" />
               </div>
@@ -101,7 +98,7 @@ class CDrivePathSelector extends React.Component {
             );
           } else {
             return (
-              <div  className="file-item drive-item" onClick={() => this.listItemClick(i)}>
+              <div  className="file-item drive-item" onClick={() => this.listItemClick(dobj.name, dobj.type)}>
                 <div>
                   <FaFile size={60} color="#9c9c9c" />
                 </div>
@@ -115,7 +112,7 @@ class CDrivePathSelector extends React.Component {
       });
     }
     return(
-      <Modal show={this.props.show} onHide={this.props.toggle} size="xl">
+      <Modal show={this.props.show} onHide={this.props.toggle} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>{this.props.title}</Modal.Title>
         </Modal.Header>

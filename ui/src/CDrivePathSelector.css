@@ -1,0 +1,35 @@
+.cdrive-path-selector {
+  height: 100%;
+  width: 100%;
+}
+.folder-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  overflow-y: auto;
+  height: 70%;
+  min-height: 200px;
+  background-color: #f5f5f5;
+  border-style: solid;
+  border-color: #858585;
+  border-width: thin;
+}
+.drive-item {
+  margin: 10px 20px 10px 20px;
+  height: fit-content;
+}
+.folder-item:hover {
+  cursor: pointer;
+  color: #007bff;
+}
+.selected-item {
+  background-color: #add8e6;
+}
+.drive-item-name {
+  text-align: center;
+}
+.modal-cdrive-selector {
+  width: 60%;
+  min-width: 200px;
+  height: 80%;
+}

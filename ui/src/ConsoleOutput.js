@@ -25,7 +25,7 @@ class ConsoleOutput extends React.Component {
   getOutput() {
     const request = axios({
       method: 'GET',
-      url: `${this.state.specs.cdriveUrl}app/${this.state.specs.username}/sm-mapper/api/logs?uid=${this.state.uid}&replicaNo=${this.state.selectedReplica}`
+      url: `${this.state.specs.cdriveUrl}app/${this.state.specs.username}/blocker/api/logs?uid=${this.state.uid}&replicaNo=${this.state.selectedReplica}`
     });
     request.then(
       response => {

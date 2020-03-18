@@ -40,6 +40,7 @@ class CDrivePathSelector extends React.Component {
   selectAction() {
     if (this.props.type === "folder") {
       this.props.action(this.state.path);
+      this.props.toggle();
     } else if(this.props.type === "file") {
       this.props.action(this.state.selectedPath);
       this.props.toggle();

@@ -1,36 +1,14 @@
 .app-container {
   margin-left: auto;
   margin-right: auto;
-  min-width: 300px;
-  width: 50%;
   margin-top: 30px;
 }
-.browse-btn {
-  float: right;
-}
-.inputs-container {
+.input-div {
   width: 100%;
-  text-align: center;
-}
-.left-input-container {
-  width: 55%;
-  padding: 10px;
-  float: left;
-  margin-bottom: 40px;
-}
-.right-input-container {
-  width: 40%;
-  padding: 10px;
-  float: right;
-  margin-bottom: 40px;
+  margin-bottom: 30px;
 }
 .blocker-text-input {
   padding: 10px;
-  width: 100%;
-}
-.label-text {
-  font-weight: 500;
-  width: 100%;
 }
 .app-header {
   text-align: center;
@@ -44,4 +22,9 @@
   margin-right: 10px;
   padding-left: 30px;
   padding-right: 30px;
+}
+.blocker-status {
+  width: 100%;
+  font-size: 20px;
+  margin: 15px;
 }

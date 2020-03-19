@@ -8,13 +8,16 @@ class CDriveSave extends React.Component{
   constructor(props) {
     super(props);
     this.state = {
-      path: "",
+      path: "users",
       pathSelector: false,
       name: "",
       saved: false,
       saveStatus: ""
     };
     this.save = this.save.bind(this);
+  }
+  componentDidMount() {
+    this.setState({path: `users/${this.props.specs.username}`});
   }
   save() {
     this.setState({saved: false});

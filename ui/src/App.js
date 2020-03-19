@@ -25,7 +25,6 @@ class App extends React.Component {
       uid: "",
       fnStatus: "",
       fnMessage: "",
-      fnStatusPollId: 0,
       elapsedTime: "",
       logsAvailable: false,
       logsPage: false,
@@ -130,13 +129,33 @@ class App extends React.Component {
     request.then(
       response => {
         this.setState({ 
-          uid: response.data.uid,
-          fnStatusPollId: setInterval(() => this.fnStatusPoll(), 2000)
+          uid: response.data.uid
         });
+        setTimeout(() => this.fnStatusPoll(), 500);
       },
     );
   }
   stopBlockFn() {
+    const cookies = new Cookies();
+    const request = axios({
+      method: 'POST',
+      url: `${this.state.specs.cdriveUrl}app/${this.state.specs.username}/blocker/api/abort`,
+      data: {
+        uid: this.state.uid,
+      },
+      headers: {
+        'Authorization': `Bearer ${cookies.get('blocker_token')}`,
+      }
+    });
+    request.then(
+      response => {
+        this.setState({ 
+          fnStatus: "",
+          fnMessage: "",
+          elapsedTime: "",
+        });
+      },
+    );
   }
   fnStatusPoll() {
     const request = axios({
@@ -145,9 +164,6 @@ class App extends React.Component {
     });
     request.then(
       response => {
-        if(response.data.fnStatus === "Complete" || response.data.fnStatus === "Error") {
-          clearInterval(this.state.fnStatusPollId);
-        }
         this.setState({
           fnStatus: response.data.fnStatus,
           fnMessage: response.data.fnMessage,
@@ -155,6 +171,9 @@ class App extends React.Component {
         });
         if (response.data.logsAvailable === "Y") {
           this.setState({logsAvailable:true});
+        }
+        if(response.data.fnStatus !== "Complete" && response.data.fnStatus !== "Error") {
+          setTimeout(() => this.fnStatusPoll(), 500);
         }
       },
     );

@@ -87,14 +87,14 @@ router.post('/block', function(req, res) {
       setStatus("Error", "Please select a CSV file as table A", true);
     } else if (bPath === undefined || bPath === "" || !bPath.endsWith(".csv")) {
       setStatus("Error", "Please select a CSV file as table B", true);
-    } else if (nA<1 || nA>20) {
-      setStatus("Error", "Number of pieces should be an integer between 1 and 20", true);
-    } else if (nB<1 || nB>20) {
-      setStatus("Error", "Number of pieces should be an integer between 1 and 20", true);
+    } else if (nA<1 || nA>100) {
+      setStatus("Error", "Number of pieces should be an integer between 1 and 100", true);
+    } else if (nB<1 || nB>100) {
+      setStatus("Error", "Number of pieces should be an integer between 1 and 100", true);
     } else if (containerUrl === "") {
       setStatus("Error", "Please enter container URL", true);
-    } else if (parseInt(replicas)<1 || parseInt(replicas)>20) {
-      setStatus("Error", "Number of replicas should be an integer between 1 and 20", true);
+    } else if (parseInt(replicas)<1 || parseInt(replicas)>50) {
+      setStatus("Error", "Number of replicas should be an integer between 1 and 50", true);
     } else {
       return true;
     }
@@ -133,7 +133,6 @@ router.post('/block', function(req, res) {
       };
       request(options, function(err, res, body) {
         if(err || res.statusCode != 200) {
-          console.log("Could not create fns");
           reject();
         } else {
           resolve();
@@ -249,11 +248,20 @@ router.post('/block', function(req, res) {
 
   function saveOutput(jsonOutput, localPath) {
     var header = Object.keys(jsonOutput[0]).map(colName => ({id: colName, title: colName}));
-    const csvWriter = createCsvWriter({
-      path: localPath,
-      header: header
-    });
-    return csvWriter.writeRecords(jsonOutput);
+    if(fs.existsSync(localPath)){
+      const csvWriter = createCsvWriter({
+        path: localPath,
+        header: header,
+        append: true
+      });
+      return csvWriter.writeRecords(jsonOutput);
+    } else {
+      const csvWriter = createCsvWriter({
+        path: localPath,
+        header: header,
+      });
+      return csvWriter.writeRecords(jsonOutput);
+    }
   }
 
   function blockComplete() {
@@ -275,31 +283,38 @@ router.post('/block', function(req, res) {
 
   Promise.all([aPromise, bPromise, fnPromise]).then(values => {
     var tableA = values[0];
-    var aChunks = Array.from({length: Math.ceil(tableA.length/nA)}).map((x,i) => {
-      return tableA.slice(i*nA, (i+1)*nA);
+    var cla = Math.ceil(tableA.length/nA);
+    var aChunks = Array.from({length: nA}).map((x,i) => {
+      return tableA.slice(i*cla, (i+1)*cla);
     });
     var tableB = values[1];
-    var bChunks = Array.from({length: Math.ceil(tableB.length/nB)}).map((x,i) => {
-      return tableB.slice(i*nB, (i+1)*nB);
+    var clb = Math.ceil(tableB.length/nB);
+    var bChunks = Array.from({length: nB}).map((x,i) => {
+      return tableB.slice(i*clb, (i+1)*clb);
     });
-    const promises = [];
-    var total = aChunks.length * bChunks.length;
-    var processed = 0;
-    aChunks.forEach(aChunk => {
-      bChunks.forEach(bChunk => {
-        var mapPromise = mapToContainer(aChunk, bChunk);
-        mapPromise.then(() => setStatus("Running", `Process ${++processed}/${total} chunks`, false));
-        promises.push(mapPromise);
-      });
-    });
-    Promise.all(promises).then(outs => saveOutput(outs.flat(), `/storage/output/${uid}.csv`), err => {
-      return new Promise ((resolve, reject) => {
-        deleteFns();
-        reject();
-      });
-    }).then(() => blockComplete(), err => {
-      console.log("Error saving output");
-      console.log(err);
+
+    var inFlight = 3*replicas;
+    var complete = 0;
+
+    function fnComplete(tuples) {
+      complete++;
+      setStatus("Running", `Processed ${complete}/${nA*nB} chunks`, false);
+      if (complete === nA*nB) {
+        saveOutput(tuples, `/storage/output/${uid}.csv`).then(() => blockComplete());
+      } else if (inFlight < nA*nB) {
+        var aid = inFlight % nA;
+        var bid = Math.floor(inFlight/nB);
+        mapToContainer(aChunks[aid], bChunks[bid]).then(outs => fnComplete(outs));
+        inFlight++;
+        saveOutput(tuples, `/storage/output/${uid}.csv`);
+      } else {
+        saveOutput(tuples, `/storage/output/${uid}.csv`);
+      }
+    }
+    Array.from({length: 3*replicas}).forEach((el, i) => {
+      var aid = i % nA;
+      var bid = Math.floor(i/nB);
+      mapToContainer(aChunks[aid], bChunks[bid]).then(outs => fnComplete(outs));
     });
   }, err => {
     setStatus("Error", "Could not process inputs", true);
@@ -354,7 +369,10 @@ router.get('/status', function(req, res) {
       } else {
         endTime = doc.endTime;
       }
-      doc.elapsedTime = `${(endTime - doc.startTime)/1000}s`;
+      var elapsedTime = endTime - doc.startTime;
+      var minutes = Math.floor(elapsedTime/60000);
+      var seconds = Math.floor(elapsedTime/1000) - (60 * minutes);
+      doc.elapsedTime = (minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
       res.json(doc);
       client.close();
     });
@@ -375,6 +393,46 @@ router.get('/logs', function(req, res) {
       }
       client.close();
     });
+  });
+});
+
+router.post('/abort', function(req, res) {
+  var accessToken = req.headers["authorization"].split(" ")[1];
+  var uid = req.body.uid;
+  var fnName = `blockfn-${process.env.COLUMBUS_USERNAME}-${uid}`;
+
+  function setStatus(execStatus, msg, isEnd) {
+    return new Promise(resolve => {
+      mongo.connect(mongoUrl, function(connectErr, client) {
+        const db = client.db('blocker');
+        const collection = db.collection('blockfns');
+        var updateDoc = {fnStatus: execStatus, fnMessage: msg};
+        if(isEnd) {
+          updateDoc.endTime = Date.now();
+        }
+        collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
+          resolve();
+          client.close();
+        });
+      });
+    });
+  }
+
+  function deleteFns() {
+    var options = {
+      url: "http://localhost:8080/delete",
+      method: "POST",
+      form: {
+        fnName: fnName
+      }
+    };
+    request(options, function(err, res, body) {
+    });
+  }
+
+  setStatus("Abort", "User aborted block functions", true).then(() => {
+    res.json({message: "success"});
+    deleteFns();
   });
 });
 

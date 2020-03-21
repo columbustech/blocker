@@ -6,6 +6,21 @@ const fs = require('fs');
 const mongo = require('mongodb').MongoClient;
 const mongoUrl = 'mongodb://localhost:27017';
 const csv = require('csv-parser');
+var collection;
+
+function connectToDB() {
+  mongo.connect(mongoUrl, function(err, client) {
+    if (err) {
+      console.log("Error connecting to DB");
+      setTimeout(() => connectToDB(), 1000);
+      return;
+    }
+    const db = client.db('blocker');
+    collection = db.collection('blockfns');
+  });
+}
+
+connectToDB();
 
 router.get('/specs', function(req, res) {
   res.json({
@@ -49,35 +64,25 @@ router.post('/block', function(req, res) {
   var uid = [...Array(10)].map(i=>(~~(Math.random()*36)).toString(36)).join('');
   var fnName = `blockfn-${process.env.COLUMBUS_USERNAME}-${uid}`;
 
-  mongo.connect(mongoUrl, function(err, client) {
-    const db = client.db('blocker');
-    const collection = db.collection('blockfns');
-    collection.insertOne({
-      uid: uid,
-      username: process.env.COLUMBUS_USERNAME,
-      fnName: fnName,
-      fnStatus: "Running",
-      fnMessage: "Processing inputs",
-      startTime: Date.now()
-    }, (insErr, insRes) => {
-      res.json({uid:uid});
-    });
-    client.close();
+  collection.insertOne({
+    uid: uid,
+    username: process.env.COLUMBUS_USERNAME,
+    fnName: fnName,
+    fnStatus: "Running",
+    fnMessage: "Processing inputs",
+    startTime: Date.now()
+  }, (insErr, insRes) => {
+    res.json({uid:uid});
   });
 
   function setStatus(execStatus, msg, isEnd) {
     return new Promise(resolve => {
-      mongo.connect(mongoUrl, function(connectErr, client) {
-        const db = client.db('blocker');
-        const collection = db.collection('blockfns');
-        var updateDoc = {fnStatus: execStatus, fnMessage: msg};
-        if(isEnd) {
-          updateDoc.endTime = Date.now();
-        }
-        collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
-          resolve();
-          client.close();
-        });
+      var updateDoc = {fnStatus: execStatus, fnMessage: msg};
+      if(isEnd) {
+        updateDoc.endTime = Date.now();
+      }
+      collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
+        resolve();
       });
     });
   }
@@ -354,28 +359,23 @@ router.post('/save', function(req, res) {
 
 router.get('/status', function(req, res) {
   var uid = req.query.uid;
-  mongo.connect(mongoUrl, function(connectErr, client) {
-    const db = client.db('blocker');
-    const collection = db.collection('blockfns');
-    collection.findOne({uid: uid}, function(findErr, doc) {
-      if (doc.logs === undefined) {
-        doc.logsAvailable = "Y";
-      } else {
-        doc.logsAvailable = "N";
-      }
-      var endtime;
-      if(!doc.endTime) {
-        endTime = Date.now()
-      } else {
-        endTime = doc.endTime;
-      }
-      var elapsedTime = endTime - doc.startTime;
-      var minutes = Math.floor(elapsedTime/60000);
-      var seconds = Math.floor(elapsedTime/1000) - (60 * minutes);
-      doc.elapsedTime = (minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
-      res.json(doc);
-      client.close();
-    });
+  collection.findOne({uid: uid}, function(findErr, doc) {
+    if (doc.logs === undefined) {
+      doc.logsAvailable = "Y";
+    } else {
+      doc.logsAvailable = "N";
+    }
+    var endtime;
+    if(!doc.endTime) {
+      endTime = Date.now()
+    } else {
+      endTime = doc.endTime;
+    }
+    var elapsedTime = endTime - doc.startTime;
+    var minutes = Math.floor(elapsedTime/60000);
+    var seconds = Math.floor(elapsedTime/1000) - (60 * minutes);
+    doc.elapsedTime = (minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
+    res.json(doc);
   });
 });
 
@@ -403,17 +403,12 @@ router.post('/abort', function(req, res) {
 
   function setStatus(execStatus, msg, isEnd) {
     return new Promise(resolve => {
-      mongo.connect(mongoUrl, function(connectErr, client) {
-        const db = client.db('blocker');
-        const collection = db.collection('blockfns');
-        var updateDoc = {fnStatus: execStatus, fnMessage: msg};
-        if(isEnd) {
-          updateDoc.endTime = Date.now();
-        }
-        collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
-          resolve();
-          client.close();
-        });
+      var updateDoc = {fnStatus: execStatus, fnMessage: msg};
+      if(isEnd) {
+        updateDoc.endTime = Date.now();
+      }
+      collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
+        resolve();
       });
     });
   }

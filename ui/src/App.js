@@ -25,7 +25,8 @@ class App extends React.Component {
       uid: "",
       fnStatus: "",
       fnMessage: "",
-      elapsedTime: "",
+      fnStart: "",
+      fnElapsed: "",
       logsAvailable: false,
       logsPage: false,
       completePage: false,
@@ -107,7 +108,8 @@ class App extends React.Component {
     this.setState({
       fnStatus: "Running",
       fnMessage: "Processing inputs",
-      elapsedTime: "0s",
+      fnStart: Date.now(),
+      fnElapsed: "0s"
     });
     const cookies = new Cookies();
     const request = axios({
@@ -137,7 +139,7 @@ class App extends React.Component {
   }
   stopBlockFn() {
     const cookies = new Cookies();
-    const request = axios({
+    axios({
       method: 'POST',
       url: `${this.state.specs.cdriveUrl}app/${this.state.specs.username}/blocker/api/abort`,
       data: {
@@ -147,15 +149,6 @@ class App extends React.Component {
         'Authorization': `Bearer ${cookies.get('blocker_token')}`,
       }
     });
-    request.then(
-      response => {
-        this.setState({ 
-          fnStatus: "",
-          fnMessage: "",
-          elapsedTime: "",
-        });
-      },
-    );
   }
   fnStatusPoll() {
     const request = axios({
@@ -164,18 +157,21 @@ class App extends React.Component {
     });
     request.then(
       response => {
+        var elapsedSecs = Math.floor((Date.now()-this.state.fnStart)/1000);
         this.setState({
           fnStatus: response.data.fnStatus,
           fnMessage: response.data.fnMessage,
-          elapsedTime: response.data.elapsedTime
+          fnElapsed: `${Math.floor(elapsedSecs/60)}m ${elapsedSecs % 60}s`
         });
         if (response.data.logsAvailable === "Y") {
           this.setState({logsAvailable:true});
         }
-        if(response.data.fnStatus !== "Complete" && response.data.fnStatus !== "Error") {
-          setTimeout(() => this.fnStatusPoll(), 500);
+        if(response.data.fnStatus === "Running") {
+          setTimeout(() => this.fnStatusPoll(), 1000);
         }
-      },
+      }, err => {
+        setTimeout(() => this.fnStatusPoll(), 1000);
+      }
     );
   }
   render() {
@@ -202,24 +198,31 @@ class App extends React.Component {
         return cDrivePath.substring(cDrivePath.lastIndexOf("/") + 1);
       }
       aPath = getName(this.state.aPath);
-      if (aPath === "") {
-        aPath = "Choose Table A"
-      }
       bPath = getName(this.state.bPath);
-      if (bPath === "") {
-        bPath = "Choose Table B";
-      }
       let blockButton, abortButton;
-      blockButton = (
-        <button className="btn btn-lg btn-primary blocker-btn" onClick={this.startBlockFn}>
-          Execute
-        </button>
-      );
-      abortButton = (
-        <button className="btn btn-lg btn-secondary blocker-btn" onClick={this.stopBlockFn}>
-          Abort
-        </button>
-      );
+      if(this.state.fnStatus === "Running") {
+        blockButton = (
+          <button className="btn btn-lg btn-primary blocker-btn" disabled={true}>
+            Execute
+          </button>
+        );
+        abortButton = (
+          <button className="btn btn-lg btn-secondary blocker-btn" onClick={this.stopBlockFn}>
+            Abort
+          </button>
+        );
+      } else {
+        blockButton = (
+          <button className="btn btn-lg btn-primary blocker-btn" onClick={this.startBlockFn}>
+            Execute
+          </button>
+        );
+        abortButton = (
+          <button className="btn btn-lg btn-secondary blocker-btn" disabled={true}>
+            Abort
+          </button>
+        );
+      }
       let statusClasses, actionButton, statusContainer;
       if(this.state.fnStatus !==  "") {
         if(this.state.fnStatus === "Complete") {
@@ -243,7 +246,7 @@ class App extends React.Component {
         }
         statusContainer = (
           <div className="blocker-status">
-            <span className={statusClasses}>{this.state.fnStatus} : {this.state.fnMessage}, Elapsed time: {this.state.elapsedTime}</span>
+            <span className={statusClasses}>{this.state.fnStatus} : {this.state.fnMessage}, Elapsed time: {this.state.fnElapsed}</span>
             {actionButton}
           </div>
         );
@@ -259,35 +262,59 @@ class App extends React.Component {
           <CDrivePathSelector show={this.state.bPathSelector} toggle={() => this.setState({bPathSelector : false})}
           action={path => this.setState({bPath: path})} title="Select CDrive Path to Table B"  actionName="Select"
           driveObjects={this.state.driveObjects} type="file" />
-          <div className="input-div">
-            <span className="mx-2">Table A:</span>
-            <button className="btn btn-secondary mx-2" onClick={() => this.setState({aPathSelector : true})} >
-              Browse
-            </button>
-            <span className="mx-2">{aPath}</span>
-            <input type="text" placeholder="No of chunks" value={this.state.nA} className="blocker-text-input mx-2"
-              onChange={e => this.setState({nA: e.target.value})} />
-          </div>
-          <div className="input-div">
-            <span className="mx-2">Table B:</span>
-            <button className="btn btn-secondary mx-2" onClick={() => this.setState({bPathSelector : true})} >
-              Browse
-            </button>
-            <span className="mx-2">{bPath}</span>
-            <input type="text" placeholder="No of chunks" value={this.state.nB} className="blocker-text-input mx-2"
-              onChange={e => this.setState({nB: e.target.value})} />
-          </div>
-          <div className="input-div">
-            <span className="mx-2">Block {"function"}:</span>
-            <input type="text" placeholder="Container URL" value={this.state.containerUrl} className="blocker-text-input mx-2"
-              onChange={e => this.setState({containerUrl: e.target.value})} />
-            <input type="text" placeholder="No of Replicas" value={this.state.replicas} className="blocker-text-input mx-2"
-              onChange={e => this.setState({replicas: e.target.value})} />
-          </div>
-          <div className="input-div text-center">
-            {blockButton}
-            {abortButton}
-          </div>
+          <table className="mx-auto">
+            <tr>
+              <td>
+                <span className="m-3">Table A:</span>
+                <button className="btn btn-secondary m-3" onClick={() => this.setState({aPathSelector : true})} >
+                  Browse
+                </button>
+                <span className="m-3">{aPath}</span>
+              </td>
+              <td>
+                <span className="m-3">No of chunks:</span>
+              </td>
+              <td>
+                <input type="text" value={this.state.nA} className="p-1 m-3 number-input" onChange={e => this.setState({nA: e.target.value})} />
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <span className="m-3">Table B:</span>
+                <button className="btn btn-secondary m-3" onClick={() => this.setState({bPathSelector : true})} >
+                  Browse
+                </button>
+                <span className="m-3">{bPath}</span>
+              </td>
+              <td>
+                <span className="m-3">No of chunks:</span>
+              </td>
+              <td>
+                <input type="text" value={this.state.nB} className="p-1 m-3 number-input" onChange={e => this.setState({nB: e.target.value})} />
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <input type="text" placeholder="Container URL" value={this.state.containerUrl} className="p-2 m-3 blocker-text-input"
+                  onChange={e => this.setState({containerUrl: e.target.value})} />
+              </td>
+              <td>
+                <span className="m-3">No of Replicas:</span>
+              </td>
+              <td>
+                <input type="text" value={this.state.replicas} className="p-1 m-3 number-input"
+                  onChange={e => this.setState({replicas: e.target.value})} />
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={3}>
+                <div className="input-div text-center">
+                  {blockButton}
+                  {abortButton}
+                </div>
+              </td>
+            </tr>
+          </table>
           {statusContainer}
         </div>
       );

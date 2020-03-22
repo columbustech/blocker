@@ -22,6 +22,86 @@ function connectToDB() {
 
 connectToDB();
 
+function setStatus(uid, execStatus, msg, isEnd) {
+  return new Promise(resolve => {
+    var updateDoc = {fnStatus: execStatus, fnMessage: msg};
+    if(isEnd) {
+      updateDoc.endTime = Date.now();
+    }
+    collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
+      resolve();
+    });
+  });
+}
+
+function createFns(url, name, replicas) {
+  return new Promise((resolve, reject) => {
+    var options = {
+      url: "http://localhost:8080/create",
+      method: "POST",
+      form: {
+        imagePath: url,
+        fnName: name,
+        replicas: replicas
+      }
+    };
+    request(options, function(err, res, body) {
+      if(err || res.statusCode != 200) {
+        reject();
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+function ensureAllFnsActive(uid) {
+  var name = `blockfn-${process.env.COLUMBUS_USERNAME}-${uid}`;
+  return new Promise((resolve, reject) => {
+    (function waitForContainer() {
+      var options = {
+        url: `http://localhost:8080/status?fnName=${name}`,
+        method: "GET",
+      };
+      request(options, function(err, res, body) {
+        var containerStatus = JSON.parse(body).fnStatus;
+        if(containerStatus === "Running") {
+          resolve(true);
+        } else if (containerStatus === "Error") {
+          setStatus(uid, "Error", "Could not create block function containers", true).then(reject);
+        } else {
+          setTimeout(waitForContainer, 500);
+        }
+      });
+    })();
+  });
+}
+
+function deleteFns(name) {
+  var options = {
+    url: "http://localhost:8080/delete",
+    method: "POST",
+    form: {
+      fnName: name
+    }
+  };
+  request(options, function(err, res, body) {
+  });
+}
+
+function getLogs(name) {
+  return new Promise(resolve => {
+    var options = {
+      url: `http://localhost:8080/logs?fnName=${name}`,
+      method: "GET",
+    };
+    request(options, function(err, res, body) {
+      var logs = JSON.parse(body);
+      resolve(logs);
+    });
+  });
+}
+
 router.get('/specs', function(req, res) {
   res.json({
     clientId: process.env.COLUMBUS_CLIENT_ID,
@@ -75,31 +155,19 @@ router.post('/block', function(req, res) {
     res.json({uid:uid});
   });
 
-  function setStatus(execStatus, msg, isEnd) {
-    return new Promise(resolve => {
-      var updateDoc = {fnStatus: execStatus, fnMessage: msg};
-      if(isEnd) {
-        updateDoc.endTime = Date.now();
-      }
-      collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
-        resolve();
-      });
-    });
-  }
-
   function checkInputs() {
     if (aPath === undefined || aPath === "" || !aPath.endsWith(".csv")) {
-      setStatus("Error", "Please select a CSV file as table A", true);
+      setStatus(uid, "Error", "Please select a CSV file as table A", true);
     } else if (bPath === undefined || bPath === "" || !bPath.endsWith(".csv")) {
-      setStatus("Error", "Please select a CSV file as table B", true);
+      setStatus(uid, "Error", "Please select a CSV file as table B", true);
     } else if (nA<1 || nA>100) {
-      setStatus("Error", "Number of pieces should be an integer between 1 and 100", true);
+      setStatus(uid, "Error", "Number of pieces should be an integer between 1 and 100", true);
     } else if (nB<1 || nB>100) {
-      setStatus("Error", "Number of pieces should be an integer between 1 and 100", true);
+      setStatus(uid, "Error", "Number of pieces should be an integer between 1 and 100", true);
     } else if (containerUrl === "") {
-      setStatus("Error", "Please enter container URL", true);
+      setStatus(uid, "Error", "Please enter container URL", true);
     } else if (parseInt(replicas)<1 || parseInt(replicas)>50) {
-      setStatus("Error", "Number of replicas should be an integer between 1 and 50", true);
+      setStatus(uid, "Error", "Number of replicas should be an integer between 1 and 50", true);
     } else {
       return true;
     }
@@ -117,65 +185,11 @@ router.post('/block', function(req, res) {
       };
       request(options, function(err, res, body) {
         if(err || res.statusCode != 200) {
-          reject();
+          reject(err);
           return;
         }
         resolve(JSON.parse(body).download_url);
       });
-    });
-  }
-
-  function createFns() {
-    return new Promise((resolve, reject) => {
-      var options = {
-        url: "http://localhost:8080/create",
-        method: "POST",
-        form: {
-          imagePath: containerUrl,
-          fnName: fnName,
-          replicas: replicas
-        }
-      };
-      request(options, function(err, res, body) {
-        if(err || res.statusCode != 200) {
-          reject();
-        } else {
-          resolve();
-        }
-      });
-    });
-  }
-
-  function ensureAllFnsActive() {
-    return new Promise((resolve, reject) => {
-      (function waitForContainer() {
-        var options = {
-          url: `http://localhost:8080/status?fnName=${fnName}`,
-          method: "GET",
-        };
-        request(options, function(err, res, body) {
-          var containerStatus = JSON.parse(body).fnStatus;
-          if(containerStatus === "Running") {
-            resolve(true);
-          } else if (containerStatus === "Error") {
-            setStatus("Error", "Could not create block function containers").then(reject);
-          } else {
-            setTimeout(waitForContainer, 500);
-          }
-        });
-      })();
-    });
-  }
-
-  function deleteFns() {
-    var options = {
-      url: "http://localhost:8080/delete",
-      method: "POST",
-      form: {
-        fnName: fnName
-      }
-    };
-    request(options, function(err, res, body) {
     });
   }
 
@@ -199,7 +213,7 @@ router.post('/block', function(req, res) {
         };
         request(options, function (err, res, body) {
           if(res && res.statusCode === 500) {
-            collectLogs().then(() => setStatus("Error", "Map function crashed", true)).then(() => deleteFns());
+            collectLogs().then(() => setStatus(uid, "Error", "Map function crashed", true)).then(() => deleteFns(fnName));
           } else if(err || res.statusCode !== 200) {
             setTimeout(() => callBlock(attemptNo + 1), 500);
           } else {
@@ -221,32 +235,14 @@ router.post('/block', function(req, res) {
 
   function collectLogs() {
     return new Promise(resolve => {
-      mongo.connect(mongoUrl, function(connectErr, client) {
-        const db = client.db('blocker');
-        const collection = db.collection('blockfns');
-        collection.findOne({uid: uid}, function(findErr, doc) {
-          requestLogs().then(logs => {
-            var updateDoc = doc;
-            updateDoc.logs = logs;
-            collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
-              resolve();
-              client.close();
-            });
+      collection.findOne({uid: uid}, function(findErr, doc) {
+        getLogs(fnName).then(logs => {
+          var updateDoc = doc;
+          updateDoc.logs = logs;
+          collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
+            resolve();
           });
         });
-      });
-    });
-  }
-
-  function requestLogs() {
-    return new Promise(resolve => {
-      var options = {
-        url: `http://localhost:8080/logs?fnName=${fnName}`,
-        method: "GET",
-      };
-      request(options, function(err, res, body) {
-        var logs = JSON.parse(body);
-        resolve(logs);
       });
     });
   }
@@ -270,40 +266,16 @@ router.post('/block', function(req, res) {
   }
 
   function blockComplete() {
-    setStatus("Complete", "Blocker executed successfully", true).then(() => deleteFns());
+    setStatus(uid, "Complete", "Blocker executed successfully", true).then(() => deleteFns(fnName));
   }
 
-  if(!checkInputs()) {
-    return;
-  }
-  const aPromise = getTableUrl(aPath).then(url => parseTable(url), err => {
-    return new Promise((resolve, reject) => reject());
-  });
-  const bPromise = getTableUrl(bPath).then(url => parseTable(url), err => {
-    return new Promise((resolve, reject) => reject());
-  });
-  const fnPromise = createFns().then(success => ensureAllFnsActive(), err => {
-    return new Promise((resolve, reject) => reject());
-  });
-
-  Promise.all([aPromise, bPromise, fnPromise]).then(values => {
-    var tableA = values[0];
-    var cla = Math.ceil(tableA.length/nA);
-    var aChunks = Array.from({length: nA}).map((x,i) => {
-      return tableA.slice(i*cla, (i+1)*cla);
-    });
-    var tableB = values[1];
-    var clb = Math.ceil(tableB.length/nB);
-    var bChunks = Array.from({length: nB}).map((x,i) => {
-      return tableB.slice(i*clb, (i+1)*clb);
-    });
-
+  function processBlocker(aChunks, bChunks) {
     var inFlight = 3*replicas;
     var complete = 0;
 
     function fnComplete(tuples) {
       complete++;
-      setStatus("Running", `Processed ${complete}/${nA*nB} chunks`, false);
+      setStatus(uid, "Running", `Processed ${complete}/${nA*nB} chunks`, false);
       if (complete === nA*nB) {
         saveOutput(tuples, `/storage/output/${uid}.csv`).then(() => blockComplete());
       } else if (inFlight < nA*nB) {
@@ -321,8 +293,39 @@ router.post('/block', function(req, res) {
       var bid = Math.floor(i/nB);
       mapToContainer(aChunks[aid], bChunks[bid]).then(outs => fnComplete(outs));
     });
+  }
+
+  if(!checkInputs()) {
+    return;
+  }
+
+  const aPromise = getTableUrl(aPath).then(url => parseTable(url), err => {
+    setStatus(uid, "Error", "Could not read table A", true);
+    return new Promise((resolve, reject) => reject());
+  });
+  const bPromise = getTableUrl(bPath).then(url => parseTable(url), err => {
+    setStatus(uid, "Error", "Could not read table B", true);
+    return new Promise((resolve, reject) => reject());
+  });
+  Promise.all([aPromise, bPromise]).then(values => {
+    var tableA = values[0];
+    var cla = Math.ceil(tableA.length/nA);
+    var aChunks = Array.from({length: nA}).map((x,i) => {
+      return tableA.slice(i*cla, (i+1)*cla);
+    });
+    var tableB = values[1];
+    var clb = Math.ceil(tableB.length/nB);
+    var bChunks = Array.from({length: nB}).map((x,i) => {
+      return tableB.slice(i*clb, (i+1)*clb);
+    });
+
+    setStatus(uid, "Running", "Creating block function containers", false);
+    createFns(containerUrl, fnName, replicas).then(success => ensureAllFnsActive(uid), err => {
+      return new Promise((resolve, reject) => reject());
+    }).then(() => processBlocker(aChunks, bChunks), err => {
+      deleteFns(fnName);
+    });
   }, err => {
-    setStatus("Error", "Could not process inputs", true);
   });
 });
 
@@ -365,16 +368,6 @@ router.get('/status', function(req, res) {
     } else {
       doc.logsAvailable = "N";
     }
-    var endtime;
-    if(!doc.endTime) {
-      endTime = Date.now()
-    } else {
-      endTime = doc.endTime;
-    }
-    var elapsedTime = endTime - doc.startTime;
-    var minutes = Math.floor(elapsedTime/60000);
-    var seconds = Math.floor(elapsedTime/1000) - (60 * minutes);
-    doc.elapsedTime = (minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`);
     res.json(doc);
   });
 });
@@ -382,17 +375,12 @@ router.get('/status', function(req, res) {
 router.get('/logs', function(req, res) {
   var uid = req.query.uid;
   var replicaNo = parseInt(req.query.replicaNo);
-  mongo.connect(mongoUrl, function(connectErr, client) {
-    const db = client.db('blocker');
-    const collection = db.collection('blockfns');
-    collection.findOne({uid: uid}, function(findErr, doc) {
-      if (doc.logs !== undefined) {
-        res.json({logs: doc.logs[replicaNo]});
-      } else {
-        res.json({logs: "No logs available for this replicas"});
-      }
-      client.close();
-    });
+  collection.findOne({uid: uid}, function(findErr, doc) {
+    if (doc.logs !== undefined) {
+      res.json({logs: doc.logs[replicaNo]});
+    } else {
+      res.json({logs: "No logs available for this replicas"});
+    }
   });
 });
 
@@ -401,33 +389,9 @@ router.post('/abort', function(req, res) {
   var uid = req.body.uid;
   var fnName = `blockfn-${process.env.COLUMBUS_USERNAME}-${uid}`;
 
-  function setStatus(execStatus, msg, isEnd) {
-    return new Promise(resolve => {
-      var updateDoc = {fnStatus: execStatus, fnMessage: msg};
-      if(isEnd) {
-        updateDoc.endTime = Date.now();
-      }
-      collection.updateOne({uid: uid}, {$set: updateDoc}, function(upErr, upRes) {
-        resolve();
-      });
-    });
-  }
-
-  function deleteFns() {
-    var options = {
-      url: "http://localhost:8080/delete",
-      method: "POST",
-      form: {
-        fnName: fnName
-      }
-    };
-    request(options, function(err, res, body) {
-    });
-  }
-
-  setStatus("Abort", "User aborted block functions", true).then(() => {
+  setStatus(uid, "Aborted", "Received abort instruction", true).then(() => {
     res.json({message: "success"});
-    deleteFns();
+    deleteFns(fnName);
   });
 });
 

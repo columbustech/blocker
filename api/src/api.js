@@ -247,7 +247,14 @@ router.post('/block', function(req, res) {
     });
   }
 
-  function saveOutput(jsonOutput, localPath) {
+  function saveOutput(jsonOutput, localPath, offset) {
+    jsonOutput = jsonOutput.map((output, i) => {
+      newOutput = {
+        id: offset + i + 1,
+        ...output
+      };
+      return newOutput;
+    });
     var header = Object.keys(jsonOutput[0]).map(colName => ({id: colName, title: colName}));
     if(fs.existsSync(localPath)){
       const csvWriter = createCsvWriter({
@@ -272,26 +279,30 @@ router.post('/block', function(req, res) {
   function processBlocker(aChunks, bChunks) {
     var inFlight = 3*replicas;
     var complete = 0;
+    var outputCount = 0;
 
     function fnComplete(tuples) {
       complete++;
       setStatus(uid, "Running", `Processed ${complete}/${nA*nB} chunks`, false);
       if (complete === nA*nB) {
-        saveOutput(tuples, `/storage/output/${uid}.csv`).then(() => blockComplete());
+        saveOutput(tuples, `/storage/output/${uid}.csv`, outputCount).then(() => blockComplete());
       } else if (inFlight < nA*nB) {
         var aid = inFlight % nA;
         var bid = Math.floor(inFlight/nB);
         mapToContainer(aChunks[aid], bChunks[bid]).then(outs => fnComplete(outs));
         inFlight++;
-        saveOutput(tuples, `/storage/output/${uid}.csv`);
+        saveOutput(tuples, `/storage/output/${uid}.csv`, outputCount);
       } else {
-        saveOutput(tuples, `/storage/output/${uid}.csv`);
+        saveOutput(tuples, `/storage/output/${uid}.csv`, outputCount);
       }
+      outputCount = outputCount + tuples.length;
     }
     Array.from({length: 3*replicas}).forEach((el, i) => {
-      var aid = i % nA;
-      var bid = Math.floor(i/nB);
-      mapToContainer(aChunks[aid], bChunks[bid]).then(outs => fnComplete(outs));
+      if (i<nA*nB) {
+        var aid = i % nA;
+        var bid = Math.floor(i/nB);
+        mapToContainer(aChunks[aid], bChunks[bid]).then(outs => fnComplete(outs));
+      }
     });
   }
 

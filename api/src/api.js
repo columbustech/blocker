@@ -248,6 +248,9 @@ router.post('/block', function(req, res) {
   }
 
   function saveOutput(jsonOutput, localPath, offset) {
+    if(!jsonOutput || jsonOutput.length === 0) {
+      return new Promise(resolve => resolve(true));
+    }
     jsonOutput = jsonOutput.map((output, i) => {
       newOutput = {
         id: offset + i + 1,
